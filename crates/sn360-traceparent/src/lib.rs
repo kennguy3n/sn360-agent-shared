@@ -50,7 +50,27 @@ pub fn generate_traceparent() -> String {
         .expect("system RNG must be available to generate a traceparent");
     getrandom::fill(&mut span_id)
         .expect("system RNG must be available to generate a traceparent");
+    ensure_nonzero_ids(&mut trace_id, &mut span_id);
     format_traceparent(&trace_id, &span_id, 0x01)
+}
+
+/// Guarantee neither id is the W3C-forbidden all-zero value (§3.2.2.3).
+///
+/// A CSPRNG makes an all-zero draw astronomically unlikely (≈2⁻¹²⁸ for
+/// the 16-byte trace id, ≈2⁻⁶⁴ for the 8-byte span id), but
+/// [`parse_traceparent`] rejects all-zero ids, so without this guard
+/// there is a vanishing-probability input on which the documented
+/// round-trip invariant would not hold. Setting a single low bit is a
+/// deterministic, O(1) fix-up that keeps the invariant total rather
+/// than probabilistic; the resulting bias is the same ≈2⁻¹²⁸ / 2⁻⁶⁴
+/// and so has no practical effect on id uniqueness.
+fn ensure_nonzero_ids(trace_id: &mut [u8; 16], span_id: &mut [u8; 8]) {
+    if trace_id.iter().all(|&b| b == 0) {
+        trace_id[15] = 1;
+    }
+    if span_id.iter().all(|&b| b == 0) {
+        span_id[7] = 1;
+    }
 }
 
 /// The trace-id / span-id components parsed out of a W3C
@@ -259,6 +279,38 @@ mod tests {
         // Re-formatting the parsed identity (with the sampled flag)
         // reproduces the original string.
         assert_eq!(format!("00-{}-{}-01", parts.trace_id, parts.span_id), tp);
+    }
+
+    /// The all-zero guard closes the only input on which the
+    /// generator/parser round-trip could fail: an (astronomically
+    /// unlikely) all-zero CSPRNG draw. Exercised directly because the
+    /// CSPRNG path can't be driven to all-zero in a test. A guarded
+    /// pair must (a) no longer be all-zero and (b) format into a value
+    /// `parse_traceparent` accepts.
+    #[test]
+    fn ensure_nonzero_ids_guards_all_zero_and_round_trips() {
+        let mut trace_id = [0u8; 16];
+        let mut span_id = [0u8; 8];
+        ensure_nonzero_ids(&mut trace_id, &mut span_id);
+        assert!(trace_id.iter().any(|&b| b != 0), "trace id must be non-zero");
+        assert!(span_id.iter().any(|&b| b != 0), "span id must be non-zero");
+        let tp = format_traceparent(&trace_id, &span_id, 0x01);
+        parse_traceparent(&tp).expect("guarded all-zero ids must round-trip");
+    }
+
+    /// The guard is a no-op for already-non-zero ids: it must never
+    /// mutate a perfectly valid CSPRNG draw (the overwhelmingly common
+    /// case).
+    #[test]
+    fn ensure_nonzero_ids_leaves_nonzero_inputs_untouched() {
+        let mut trace_id = [0u8; 16];
+        trace_id[0] = 0xAB;
+        let mut span_id = [0u8; 8];
+        span_id[3] = 0xCD;
+        let (orig_trace, orig_span) = (trace_id, span_id);
+        ensure_nonzero_ids(&mut trace_id, &mut span_id);
+        assert_eq!(trace_id, orig_trace, "non-zero trace id must be untouched");
+        assert_eq!(span_id, orig_span, "non-zero span id must be untouched");
     }
 
     /// `parse_traceparent` accepts a canonical W3C example and
