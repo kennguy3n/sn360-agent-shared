@@ -46,8 +46,10 @@
 #![forbid(unsafe_op_in_unsafe_fn)]
 #![deny(missing_docs)]
 
-/// Variant discriminator carried in the first byte of every ring-
-/// buffer record.
+/// Variant discriminator carried in every ring-buffer record's
+/// [`WireHeader`]. It lives at [`WIRE_KIND_OFFSET`] (offset 20), NOT
+/// at byte 0 — read it via [`userland::peek_kind`] rather than the
+/// leading byte.
 ///
 /// The numeric values are part of the on-the-wire contract — bumping
 /// them breaks the build pipeline because the userland decoder and
