@@ -10,15 +10,18 @@
 //! * The **userland** loader crate (compiled for the host's
 //!   regular target). The aya ring-buffer reader pulls raw bytes
 //!   off the kernel-allocated map and casts them to the variant
-//!   indicated by the leading [`WireKind`] discriminator.
+//!   indicated by the [`WireKind`] discriminator in the header.
 //!
 //! ## Wire format
 //!
 //! Every ring-buffer record starts with a fixed-size [`WireHeader`]
-//! whose first byte is a [`WireKind`] discriminator. The rest of
-//! the record is a `#[repr(C)]` struct sized to the variant — the
-//! userland reader picks the right struct off the first byte and
-//! casts the remaining bytes to it.
+//! that carries a [`WireKind`] discriminator. The discriminator does
+//! NOT sit at byte 0: the header is laid out to keep `ktime_ns`
+//! 8-byte aligned at offset 0, so the kind byte lands at
+//! [`WIRE_KIND_OFFSET`] (after the three 4-byte identifier fields).
+//! The userland reader reads the kind from that offset (see
+//! [`userland::peek_kind`]), then casts the whole record to the
+//! `#[repr(C)]` struct sized to the variant.
 //!
 //! All fields are little-endian (which matches the bpfel target
 //! and every Linux platform the SN360 agents support — the bpfeb
