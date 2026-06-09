@@ -214,7 +214,12 @@ pub struct WireOpen {
     pub header: WireHeader,
     /// `open(2)` flags (`O_RDONLY` / `O_WRONLY` / `O_CREAT` …).
     pub flags: i32,
-    /// Reserved so the path field is 4-byte aligned.
+    /// Reserved so `path` starts at offset 32: the 24-byte header
+    /// plus `flags` plus this padding make up a fixed 32-byte prefix,
+    /// giving the struct the `24 + 8 + PATH_LEN` `#[repr(C)]` layout
+    /// asserted below. `path` is a byte array (alignment 1), so this
+    /// padding pins the wire offset rather than satisfying an
+    /// alignment requirement.
     pub _pad: [u8; 4],
     /// NUL-terminated path argument to `openat(2)`.
     pub path: [u8; PATH_LEN],
