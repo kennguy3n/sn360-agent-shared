@@ -302,6 +302,38 @@ const _: () = assert!(core::mem::size_of::<WireDns>() == 24 + 8 + DNS_QUERY_LEN)
 /// per-record cost above the loader's `RECORD_SIZE_GUARD`.
 const _: () = assert!(core::mem::size_of::<WireExec>() == 24 + EXE_LEN + CMDLINE_LEN + CWD_LEN);
 
+mod sealed {
+    /// Sealing supertrait for [`super::WireRecord`]. Keeping it private
+    /// prevents downstream crates from implementing `WireRecord` for
+    /// their own types, so the set of byte-castable types stays closed
+    /// to the verified POD layouts defined in this crate.
+    pub trait Sealed {}
+}
+
+/// Fixed-layout wire records that are safe to materialize from a raw
+/// ring-buffer byte slice via [`userland::cast_record`].
+///
+/// The trait is sealed: only the `#[repr(C)]` `Wire*` structs defined
+/// in this crate implement it. Each is composed solely of integer
+/// primitives and `[u8; N]` byte arrays, so every bit pattern of the
+/// correct length is a valid value — the invariant `cast_record`'s
+/// `read_unaligned` relies on for soundness. Because the trait cannot
+/// be implemented downstream, a consumer cannot widen `cast_record` to
+/// a type with invalid bit patterns (e.g. `bool` or a
+/// restricted-discriminant enum), which would otherwise be UB.
+pub trait WireRecord: sealed::Sealed + Copy {}
+
+macro_rules! impl_wire_record {
+    ($($t:ty),+ $(,)?) => {
+        $(
+            impl sealed::Sealed for $t {}
+            impl WireRecord for $t {}
+        )+
+    };
+}
+
+impl_wire_record!(WireHeader, WireExec, WireExit, WireOpen, WireNet, WireDns);
+
 /// Userland helpers — only compiled when the consumer (the agent's
 /// userland eBPF loader crate) opts in via the `user` feature.
 /// Keeping them gated keeps `core::fmt` panics out of the
@@ -335,20 +367,22 @@ pub mod userland {
             .and_then(WireKind::from_u8)
     }
 
-    /// Cast a raw ring-buffer record to a `&T` of the matching
-    /// wire variant. Returns `None` when the buffer is shorter
-    /// than `T` — the caller is responsible for matching `T` to
-    /// the [`WireKind`] read out of the leading byte.
+    /// Cast a raw ring-buffer record to a `T` of the matching wire
+    /// variant. Returns `None` when the buffer is shorter than `T` —
+    /// the caller is responsible for matching `T` to the [`WireKind`]
+    /// read out of [`WIRE_KIND_OFFSET`].
     ///
-    /// `T` MUST be `#[repr(C)]` POD and aligned to a `u64` (which
-    /// every [`WireExec`] / [`WireExit`] / … variant is — they all
-    /// start with a [`WireHeader`] whose 4-byte pad guarantees the
-    /// following `u64` is naturally aligned).
-    pub fn cast_record<T: Copy>(bytes: &[u8]) -> Option<T> {
+    /// `T` is bounded by the sealed [`WireRecord`] trait, so it can
+    /// only ever be one of this crate's `#[repr(C)]` POD wire structs
+    /// (every byte pattern of the right length is a valid value). The
+    /// unaligned read below is therefore sound for any sufficiently
+    /// long slice, and downstream code cannot instantiate it with a
+    /// type that has invalid bit patterns.
+    pub fn cast_record<T: WireRecord>(bytes: &[u8]) -> Option<T> {
         if bytes.len() < core::mem::size_of::<T>() {
             return None;
         }
-        // SAFETY: `T` is `#[repr(C)]` POD. We perform an unaligned
+        // SAFETY: `T: WireRecord` is `#[repr(C)]` POD. We perform an unaligned
         // read because the kernel-allocated ring buffer may yield
         // records at arbitrary byte offsets. `read_unaligned` is
         // the documented sound way to materialize a POD from a
