@@ -1,0 +1,18 @@
+[package]
+name = "sn360-traceparent"
+description = "Self-contained W3C Trace Context (traceparent) generation + parsing for SN360 agent outbound Gateway requests (Tier 1.2 shared extraction)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+publish = false
+
+# Intentionally self-contained: the only dependency is the OS CSPRNG.
+# This is what lets the three agent comms crates (`sda-comms`,
+# `vma-comms`, `ska-comms`) re-export it without pulling in each
+# other's transport stack. `getrandom` 0.3 already resolves in all
+# three agent lockfiles, so this adds no new crate version downstream.
+
+[dependencies]
+getrandom = { workspace = true }

@@ -1,0 +1,39 @@
+[workspace]
+members = [
+    "crates/sn360-ebpf-wire",
+    "crates/sn360-traceparent",
+    "crates/sn360-tls-roots",
+]
+resolver = "2"
+
+# Unified workspace version: every shared crate publishes at the same
+# number even when only one changed. This simplifies the consumer-side
+# bump — the three agent repos pin a single git revision of this
+# workspace, so a coordinated version is what they reason about (see
+# `docs/agent-shared-patterns.md` § "Open strategic decisions" →
+# versioning policy).
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "LicenseRef-Proprietary"
+authors = ["SN360 Agent Contributors"]
+rust-version = "1.80"
+repository = "https://github.com/kennguy3n/sn360-agent-shared"
+
+[workspace.dependencies]
+# TLS: match the agent workspaces (rustls 0.23 + rustls-pki-types 1.x)
+# so the `RootCertStore` type unifies when an agent re-exports
+# `sn360-tls-roots`. `ring` crypto backend, no aws-lc-rs (mirrors the
+# desktop / VM agent workspace TLS config).
+rustls = { version = "0.23", default-features = false, features = ["ring", "logging", "std", "tls12"] }
+rustls-pki-types = "1"
+thiserror = "2"
+# OS CSPRNG for traceparent id generation. getrandom 0.3 already
+# resolves in all three agent lockfiles, so depending on it here adds
+# no new crate version to any consumer's dependency tree.
+getrandom = "0.3"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1

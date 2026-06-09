@@ -1,0 +1,39 @@
+[package]
+name = "sn360-ebpf-wire"
+description = "Shared #![no_std], dependency-free POD wire types between the SN360 agent eBPF kernel programs and their userland aya loaders (Tier 1.1 shared extraction)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+publish = false
+
+# This crate is `#![no_std]` and intentionally has zero runtime
+# dependencies so the exact same source compiles both for the userland
+# decoder (std target, e.g. x86_64-unknown-linux-gnu) and for the
+# kernel-side eBPF crate (bpfel-unknown-none, no_std + build-std=core).
+# Adding any dependency here risks breaking the kernel-object build, so
+# the workspace deliberately leaves `[dependencies]` empty.
+
+[features]
+default = []
+# Compile the optional `Debug` / `PartialEq` impls and the `userland`
+# decoder helpers (`cstr_lossy`, `peek_kind`, `cast_record`) that the
+# userland aya loaders + their test suites use but which are dead
+# weight — and unsafe `core::fmt` panics — on the kernel side. The
+# kernel-side `Cargo.toml` MUST NOT enable this feature, otherwise the
+# verifier rejects the resulting ELF.
+user = []
+# Reserved opt-in seam for the SN360 K8s agent (`ska-ebpf-common`).
+#
+# The K8s agent's wire format currently diverges from the desktop / VM
+# 5-variant format modelled here (it uses u32-versioned, bytemuck-`Pod`
+# event structs with cluster-aware variants — see
+# `docs/agent-shared-patterns.md`). This feature is a deliberately
+# empty placeholder so the crate's feature surface is ready for a
+# future Tier-2 effort that lands the K8s-specific variants here behind
+# this gate, without prematurely moving ~1600 lines of divergent code.
+# Enabling it today is a no-op.
+k8s = []
+
+[dependencies]
